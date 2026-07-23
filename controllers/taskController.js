@@ -52,7 +52,7 @@ async function show(req, res, next) {
   }
 
   try {
-    const task = await prisma.task.findUniqueOrThrow({
+    const task = await prisma.task.findUnique({
       where: {
         id: taskId,
         userId: global.user_id,
@@ -60,6 +60,11 @@ async function show(req, res, next) {
       select: { title: true, isCompleted: true, id: true },
     });
 
+    if (task === null) {
+      return res.status(404).json({
+        message: "No matching task exists",
+      });
+    }
     res.status(200).json(task);
   } catch (e) {
     if (e.code === "P2025") {
@@ -132,7 +137,9 @@ async function deleteTask(req, res, next) {
     res.status(200).json(taskIndex);
   } catch (e) {
     if (e.code === "P2025") {
-      return res.sendStatus(404);
+      return res.status(404).json({
+        message: "The task was not found."
+      });
     } else {
       return next(e);
     }

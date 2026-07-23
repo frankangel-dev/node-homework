@@ -42,7 +42,7 @@ async function index(req, res) {
   res.status(200).json(tasks);
 }
 
-async function show(req, res) {
+async function show(req, res, next) {
   const taskId = parseInt(req.params?.id);
 
   if (Number.isNaN(taskId)) {
@@ -51,21 +51,25 @@ async function show(req, res) {
     });
   }
 
-  const task = await prisma.task.findUnique({
-    where: {
-      id: taskId,
-      userId: global.user_id,
-    },
-    select: { title: true, isCompleted: true, id: true },
-  });
-
-  if (task === null) {
-    return res.status(404).json({
-      message: "No matching task exists",
+  try {
+    const task = await prisma.task.findUniqueOrThrow({
+      where: {
+        id: taskId,
+        userId: global.user_id,
+      },
+      select: { title: true, isCompleted: true, id: true },
     });
-  }
 
-  res.status(200).json(task);
+    res.status(200).json(task);
+  } catch (e) {
+    if (e.code === "P2025") {
+      return res.status(404).json({
+        message: "No matching task exists",
+      });
+    } else {
+      return next(e);
+    }
+  }
 }
 
 async function update(req, res, next) {

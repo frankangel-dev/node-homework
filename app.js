@@ -9,6 +9,7 @@ const errorHandler = require("./middleware/error-handler");
 const timeRouter = require("./routes/timeRoutes");
 const authMiddleware = require("./middleware/auth");
 const taskRouter = require("./routes/taskRoutes");
+const analyticsRouter = require("./routes/analyticsRoutes");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -19,6 +20,7 @@ app.use(express.json());
 app.use("/api/users", userRoutes);
 app.use("/api", timeRouter);
 app.use("/api/tasks", authMiddleware, taskRouter);
+app.use("/api/analytics", authMiddleware, analyticsRouter);
 
 app.get("/", (req, res) => {
   res.send("Hello, World!");

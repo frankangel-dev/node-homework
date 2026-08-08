@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const util = require("util");
 const { userSchema } = require("../validation/userSchema");
 const prisma = require("../db/prisma");
+const { StatusCodes } = require("http-status-codes");
 const scrypt = util.promisify(crypto.scrypt);
 
 const cookieFlags = (req) => {
@@ -35,6 +36,47 @@ async function comparePassword(inputPassword, storedHash) {
 
 async function register(req, res, next) {
   if (!req.body) req.body = {};
+
+  let isPerson = false;
+  if (req.body.recaptchaToken) {
+    const token = req.body.recaptchaToken;
+    const params = new URLSearchParams();
+    params.append("secret", process.env.RECAPTCHA_SECRET);
+    params.append("response", token);
+    params.append("remoteip", req.ip);
+    try {
+      const response = await fetch(
+        "https://www.google.com/recaptcha/api/siteverify",
+        {
+          method: "POST",
+          body: params.toString(),
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+        },
+      );
+      const data = await response.json();
+      if (data.success) {
+        isPerson = true;
+      }
+    } catch (e) {
+      return next(e);
+    }
+  } else if (
+    process.env.RECAPTCHA_BYPASS &&
+    req.get("X-Recaptcha-Test") === process.env.RECAPTCHA_BYPASS
+  ) {
+    // might be a test environment
+    isPerson = true;
+  }
+  if (!isPerson) {
+    return res.status(StatusCodes.BAD_REQUEST).json({
+        message: "Bot verification failed. Please complete the reCAPTCHA.",
+      });
+  }
+
+  delete req.body.recaptchaToken;
+
   const { error, value } = userSchema.validate(req.body, { abortEarly: false });
 
   if (error) {

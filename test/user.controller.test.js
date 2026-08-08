@@ -1,5 +1,6 @@
 require("dotenv").config();
 process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+process.env.RECAPTCHA_BYPASS = process.env.JWT_SECRET;
 const waitForRouteHandlerCompletion = require("./waitForRouteHandlerCompletion");
 const prisma = require("../db/prisma");
 const httpMocks = require("node-mocks-http");
@@ -47,6 +48,7 @@ describe("testing logon, register, and logoff", () => {
       method: "POST",
       body: { name: "Bob", email: "bob@sample.com", password: "Pa$$word20" },
     });
+    req.headers["X-Recaptcha-Test"] = process.env.JWT_SECRET;
     saveRes = MockResponseWithCookies();
     await waitForRouteHandlerCompletion(register, req, saveRes);
     expect(saveRes.statusCode).toBe(201);

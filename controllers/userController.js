@@ -55,8 +55,9 @@ async function register(req, res, next) {
       },
     );
     const data = await response.json();
-    if (data.success) isPerson = true;
-    delete req.body.recaptchaToken;
+    if (data.success) {
+      isPerson = true;
+    }
   } else if (
     process.env.RECAPTCHA_BYPASS &&
     req.get("X-Recaptcha-Test") === process.env.RECAPTCHA_BYPASS
@@ -69,6 +70,8 @@ async function register(req, res, next) {
         message: "Bot verification failed. Please complete the reCAPTCHA.",
       });
   }
+
+  delete req.body.recaptchaToken;
   
   const { error, value } = userSchema.validate(req.body, { abortEarly: false });
 

@@ -44,19 +44,23 @@ async function register(req, res, next) {
     params.append("secret", process.env.RECAPTCHA_SECRET);
     params.append("response", token);
     params.append("remoteip", req.ip);
-    const response = await fetch(
-      "https://www.google.com/recaptcha/api/siteverify",
-      {
-        method: "POST",
-        body: params.toString(),
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
+    try {
+      const response = await fetch(
+        "https://www.google.com/recaptcha/api/siteverify",
+        {
+          method: "POST",
+          body: params.toString(),
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
         },
-      },
-    );
-    const data = await response.json();
-    if (data.success) {
-      isPerson = true;
+      );
+      const data = await response.json();
+      if (data.success) {
+        isPerson = true;
+      }
+    } catch (e) {
+      return next(e);
     }
   } else if (
     process.env.RECAPTCHA_BYPASS &&
@@ -72,7 +76,7 @@ async function register(req, res, next) {
   }
 
   delete req.body.recaptchaToken;
-  
+
   const { error, value } = userSchema.validate(req.body, { abortEarly: false });
 
   if (error) {

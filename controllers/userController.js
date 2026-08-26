@@ -4,7 +4,9 @@ const util = require("util");
 const { userSchema } = require("../validation/userSchema");
 const prisma = require("../db/prisma");
 const { StatusCodes } = require("http-status-codes");
+const { OAuth2Client } = require("google-auth-library");
 const scrypt = util.promisify(crypto.scrypt);
+const GOOGLE_SIGN_IN = "google-oauth-account-no-password";
 
 const cookieFlags = (req) => {
   return {
@@ -15,10 +17,18 @@ const cookieFlags = (req) => {
 };
 
 const setJwtCookie = (req, res, user) => {
-  const payload = { id: user.id, csrfToken: crypto.randomUUID() };
+  const payload = {
+    id: user.id,
+    roles: user.roles,
+    csrfToken: crypto.randomUUID(),
+  };
   const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1h" });
   res.cookie("jwt", token, { ...cookieFlags(req), maxAge: 3600000 });
   return payload.csrfToken;
+};
+
+function parseRoles(roles) {
+  return (roles || "").split(",").map((role) => role.trim()).filter(Boolean);
 };
 
 async function hashPassword(password) {
@@ -32,6 +42,51 @@ async function comparePassword(inputPassword, storedHash) {
   const keyBuffer = Buffer.from(key, "hex");
   const derivedKey = await scrypt(inputPassword, salt, 64);
   return crypto.timingSafeEqual(keyBuffer, derivedKey);
+}
+
+async function createUserWithWelcomeTasks(value) {
+  return await prisma.$transaction(async (tx) => {
+    const newUser = await tx.user.create({
+      data: value,
+      select: { name: true, email: true, roles: true, id: true },
+    });
+
+    const welcomeTaskData = [
+      {
+        title: "Complete your profile",
+        userId: newUser.id,
+        priority: "medium",
+      },
+      {
+        title: "Add your first task",
+        userId: newUser.id,
+        priority: "high",
+      },
+      {
+        title: "Explore the app",
+        userId: newUser.id,
+        priority: "low",
+      },
+    ];
+
+    await tx.task.createMany({ data: welcomeTaskData });
+
+    const welcomeTasks = await tx.task.findMany({
+      where: {
+        userId: newUser.id,
+        title: { in: welcomeTaskData.map((t) => t.title) },
+      },
+      select: {
+        id: true,
+        title: true,
+        isCompleted: true,
+        userId: true,
+        priority: true,
+      },
+    });
+
+    return { user: newUser, welcomeTasks };
+  });
 }
 
 async function register(req, res, next) {
@@ -71,8 +126,8 @@ async function register(req, res, next) {
   }
   if (!isPerson) {
     return res.status(StatusCodes.BAD_REQUEST).json({
-        message: "Bot verification failed. Please complete the reCAPTCHA.",
-      });
+      message: "Bot verification failed. Please complete the reCAPTCHA.",
+    });
   }
 
   delete req.body.recaptchaToken;
@@ -90,63 +145,78 @@ async function register(req, res, next) {
   delete value.password;
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const newUser = await tx.user.create({
-        data: value,
-        select: { name: true, email: true, id: true },
-      });
+    const newUser = await createUserWithWelcomeTasks(value);
 
-      const welcomeTaskData = [
-        {
-          title: "Complete your profile",
-          userId: newUser.id,
-          priority: "medium",
-        },
-        {
-          title: "Add your first task",
-          userId: newUser.id,
-          priority: "high",
-        },
-        {
-          title: "Explore the app",
-          userId: newUser.id,
-          priority: "low",
-        },
-      ];
+    const csrfToken = setJwtCookie(req, res, newUser.user);
 
-      await tx.task.createMany({ data: welcomeTaskData });
-
-      const welcomeTasks = await tx.task.findMany({
-        where: {
-          userId: newUser.id,
-          title: { in: welcomeTaskData.map((t) => t.title) },
-        },
-        select: {
-          id: true,
-          title: true,
-          isCompleted: true,
-          userId: true,
-          priority: true,
-        },
-      });
-
-      return { user: newUser, welcomeTasks };
-    });
-
-    const csrfToken = setJwtCookie(req, res, result.user);
-    
     res.status(201).json({
-      user: result.user,
-      welcomeTasks: result.welcomeTasks,
+      user: newUser.user,
+      welcomeTasks: newUser.welcomeTasks,
       transactionStatus: "success",
       csrfToken,
     });
-
-    return;
   } catch (e) {
     if (e.name === "PrismaClientKnownRequestError" && e.code === "P2002") {
       return res.status(400).json({
         error: "Email already registered",
+      });
+    }
+    return next(e);
+  }
+}
+
+async function googleLogon(req, res, next) {
+  let { authorizationCode } = req.body;
+
+  if (!authorizationCode) {
+    return res.status(400).json({
+      message: "Validation failed",
+    });
+  }
+
+  const client = new OAuth2Client(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    "postmessage",
+  );
+
+  try {
+    const { tokens } = await client.getToken(authorizationCode);
+    const ticket = await client.verifyIdToken({
+      idToken: tokens.id_token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const { email, name } = ticket.getPayload();
+
+    let user = await prisma.user.findUnique({
+      where: {
+        email: email.toLowerCase(),
+      },
+    });
+    
+
+    if (!user) {
+      const value = {
+        name,
+        email: email.toLowerCase(),
+        hashedPassword: GOOGLE_SIGN_IN,
+      };
+
+      const createUser = await createUserWithWelcomeTasks(value);
+      user = createUser.user;
+    }
+
+    const csrfToken = setJwtCookie(req, res, user);
+
+    res.status(200).json({
+      name: user.name,
+      roles: parseRoles(user.roles),
+      csrfToken,
+    });
+  } catch (e) {
+    if (e?.message?.includes("invalid_grant")) {
+      return res.status(401).json({
+        message: "Google sign-in failed.",
       });
     }
     return next(e);
@@ -168,6 +238,11 @@ async function logon(req, res) {
     });
   }
 
+  if (user.hashedPassword === GOOGLE_SIGN_IN) {
+    return res.status(401).json({
+      message: "This account uses Google sign-in. Please continue with Google."
+    });
+  }
   const goodCredentials = await comparePassword(password, user.hashedPassword);
 
   if (!goodCredentials) {
@@ -181,6 +256,7 @@ async function logon(req, res) {
   res.status(200).json({
     name: user.name,
     email: user.email,
+    roles: parseRoles(user.roles),
     csrfToken,
   });
 }
@@ -192,6 +268,7 @@ function logoff(req, res) {
 
 module.exports = {
   register,
+  googleLogon,
   logon,
   logoff,
 };

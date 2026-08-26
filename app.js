@@ -5,7 +5,9 @@ const notFound = require("./middleware/not-found");
 const errorHandler = require("./middleware/error-handler");
 const timeRouter = require("./routes/timeRoutes");
 const jwtMiddleware = require("./middleware/jwtMiddleware");
+const adminOnly = require("./middleware/adminOnly");
 const taskRouter = require("./routes/taskRoutes");
+const folderRouter = require('./routes/folderRoutes');
 const analyticsRouter = require("./routes/analyticsRoutes");
 const helmet = require("helmet");
 const cookieParser = require("cookie-parser");
@@ -33,7 +35,8 @@ app.use(xss());
 app.use("/api/users", userRoutes);
 app.use("/api", timeRouter);
 app.use("/api/tasks", jwtMiddleware, taskRouter);
-app.use("/api/analytics", jwtMiddleware, analyticsRouter);
+app.use("/api/folders", jwtMiddleware, folderRouter);
+app.use("/api/analytics", jwtMiddleware, adminOnly, analyticsRouter);
 
 app.get("/", (req, res) => {
   res.send("Hello, World!");

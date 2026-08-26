@@ -11,9 +11,11 @@ model User {
   id             Int      @id @default(autoincrement())
   email          String   @unique @db.VarChar(255)
   name           String   @db.VarChar(30)
+  roles          String?  @db.VarChar(255)
   hashedPassword String   @map("hashed_password") @db.VarChar(255)
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(6)
   Task           Task[]
+  Folder         Folder[]
 
   @@map("users")
 }
@@ -25,8 +27,23 @@ model Task {
   priority    String   @default("medium") @db.VarChar(10)
   userId      Int      @map("user_id")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  trash       Boolean  @default(false)
+  folderId    Int? @map("folder_id")
   User        User     @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  Folder      Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([id, userId])
   @@map("tasks")
+}
+
+model Folder {
+  id        Int      @id @default(autoincrement())
+  name     String   @db.VarChar(255)
+  userId    Int      @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  User      User     @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  Task      Task[]
+
+  @@unique([userId, name])
+  @@map("folders")
 }

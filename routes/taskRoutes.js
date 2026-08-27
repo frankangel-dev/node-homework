@@ -1,13 +1,28 @@
-const express = require('express');
-const { index, show, create, update, deleteTask, bulkCreate } = require("../controllers/taskController");
+const express = require("express");
+const {
+  create,
+  bulkCreateTask,
+  index,
+  show,
+  update,
+  bulkUpdateTask,
+  deleteTask,
+  bulkDeleteTask,
+  restoreTask,
+  emptyTrash,
+} = require("../controllers/taskController");
 
 const router = express.Router();
 
-router.post('/bulk', bulkCreate);
-router.get('/', index);
-router.get('/:id', show);
-router.post('/', create);
-router.patch('/:id', update);
-router.delete('/:id', deleteTask);
+router.get("/", index);
+router.get("/:id", show);
+router.post("/", create);
+router.post("/bulk", bulkCreateTask);
+router.post("/:id/restore", restoreTask);
+router.patch("/bulk", bulkUpdateTask);
+router.patch("/:id", update);
+router.delete("/trash", emptyTrash);
+router.delete("/bulk", bulkDeleteTask);
+router.delete("/:id", deleteTask);
 
 module.exports = router;

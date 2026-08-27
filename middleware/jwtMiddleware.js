@@ -19,6 +19,7 @@ module.exports = async (req, res, next) => {
 
     req.user = {
       id: decoded.id,
+      roles: decoded.roles,
     };
 
     if (["POST", "PATCH", "PUT", "DELETE", "CONNECT"].includes(req.method)) {

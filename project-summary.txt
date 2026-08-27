@@ -1,1 +1,154 @@
 https://node-homework-frankangel.onrender.com
+
+WHAT I ADDED
+============
+
+1. Roles and admin only analytics
+2. Recycle bin
+3. Folders
+4. Bulk update and bulk delete
+5. Google OAuth logon
+
+
+TESTING THE REGISTER ROUTE
+==========================
+
+POST /api/users/register is protected by reCAPTCHA. Postman cannot run the
+widget, so send the RECAPTCHA_BYPASS value in an X-Recaptcha-Test header
+instead. That value is set as an environment variable on Render.
+
+Every route below except register, logon and googleLogon needs the JWT cookie,
+and anything that writes also needs the X-CSRF-TOKEN header.
+
+
+1. ROLES AND ADMIN ONLY ANALYTICS
+---------------------------------
+
+I added a roles column to the user model and locked the analytics routes behind
+it. Before this, any logged in user could read anyone else's tasks. Roles are a
+comma separated string, they go into the JWT at logon, and adminOnly middleware
+checks for "admin".
+
+Roles are set by hand in Prisma Studio. Changing a role does not take effect
+until the user logs on again, since the role lives in the JWT.
+
+  GET /api/analytics/users
+      paginated list of every user with their task counts
+      query params: page, limit
+
+  GET /api/analytics/users/:id
+      returns {taskStats, recentTasks, weeklyProgress}
+      taskStats is a done/not done count, recentTasks is their 10 newest,
+      weeklyProgress is what they created in the last 7 days
+      returns 404 if that user does not exist
+
+  GET /api/analytics/tasks/search?q=groceries
+      searches task titles and user names across every account
+      query params: q (required, 2 characters minimum), limit
+
+All three return 401 unless the account has the admin role.
+
+
+2. RECYCLE BIN
+--------------
+
+DELETE /api/tasks/:id no longer removes the row, it sets a trash flag. Every
+route that reads tasks filters trashed ones out unless you ask for them.
+
+  POST /api/tasks/:id/restore
+      pulls a task back out of the trash
+      no body
+      returns 404 if the task is not in the trash
+
+  DELETE /api/tasks/trash
+      permanently deletes every trashed task for the logged on user
+      no body
+      returns {message, removed}
+
+  GET /api/tasks?trash=true
+      returns trashed tasks along with live ones
+      without the param you only get live tasks
+
+  GET /api/tasks/:id?trash=true
+      lets you look at a single trashed task, otherwise it 404s
+
+
+3. FOLDERS
+----------
+
+New folders table, plus an optional folderId on tasks. Deleting a folder does
+not delete its tasks, they just end up with no folder.
+
+  GET /api/folders
+      your folders, with the tasks in each one
+      query params: page, limit, find, min_date, max_date
+      returns 404 if you have no folders yet
+
+  GET /api/folders/:id
+      one folder and its tasks
+
+  POST /api/folders
+      body: {"name": "Work"}
+      name must be 3 to 30 characters
+      returns 400 if you already have a folder with that name
+
+  PATCH /api/folders/:id
+      body: {"name": "School"}
+
+  DELETE /api/folders/:id
+      tasks in that folder survive with no folder
+
+Putting tasks in folders:
+
+  POST /api/tasks
+      body: {"title": "Study", "folderId": 3}
+      leave folderId out for no folder
+
+  PATCH /api/tasks/:id
+      body: {"folderId": 3} to move it
+      body: {"folderId": null} to take it out of a folder
+
+  GET /api/tasks?folder=3
+      only tasks in folder 3
+
+  GET /api/tasks?folder=none
+      only tasks that are not in a folder
+
+Passing a folder id that belongs to another user returns 404.
+
+
+4. BULK UPDATE AND BULK DELETE
+------------------------------
+
+Both take an array of task ids and act on all of them at once.
+
+  PATCH /api/tasks/bulk
+      body: {"taskId": [1,2,3], "isCompleted": true}
+      also works with title, priority or folderId
+      returns {message, tasksUpdated}
+
+  DELETE /api/tasks/bulk
+      body: {"taskId": [1,2,3]}
+      soft delete, so these go to the trash
+      returns {message, tasksTrashed}
+
+Ids that belong to another user do not match, and the count tells you how
+many changed. Both routes return 400 if you leave the array out.
+
+
+5. GOOGLE OAUTH LOGON
+---------------------
+
+  POST /api/users/googleLogon
+      body: {"authorizationCode": "the code Google gives the front end"}
+      returns {name, roles, csrfToken} and sets the JWT cookie
+
+The front end gets an authorization code from Google and sends it here. The
+server swaps it for the user's identity, then finds or creates their account.
+
+This one is hard to test in Postman since you need a real browser to get an
+authorization code. Sending a fake one returns 401.
+
+Google accounts have no password, so trying to log in through POST
+/api/users/logon with a Google account's email returns 401 with a message
+saying to use Google sign in.

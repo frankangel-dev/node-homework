@@ -29,12 +29,12 @@ async function getUserAnalytics(req, res, next) {
 
     const taskStats = await prisma.task.groupBy({
       by: ["isCompleted"],
-      where: { userId },
+      where: { userId , trash: false },
       _count: { id: true },
     });
 
     const recentTasks = await prisma.task.findMany({
-      where: { userId },
+      where: { userId, trash: false },
       select: {
         title: true,
         isCompleted: true,
@@ -53,6 +53,7 @@ async function getUserAnalytics(req, res, next) {
       where: {
         userId,
         createdAt: { gte: oneWeekAgo },
+        trash: false,
       },
       _count: { id: true },
     });
@@ -75,8 +76,8 @@ async function getUsersWithStats(req, res, next) {
   try {
     const usersRaw = await prisma.user.findMany({
       include: {
-        Task: { where: { isCompleted: false }, select: { id: true }, take: 5 },
-        _count: { select: { Task: true } },
+        Task: { where: { isCompleted: false, trash: false }, select: { id: true }, take: 5 },
+        _count: { select: { Task: { where: { trash: false } } } },
       },
       skip: skip,
       take: limit,
@@ -125,7 +126,7 @@ async function searchTasks(req, res, next) {
   const searchPattern = `%${searchQuery}%`;
   const exactMatch = searchQuery;
   const startsWith = `${searchQuery}%`;
-  
+
   try {
     const searchResults = await prisma.$queryRaw`
       SELECT t.id,
@@ -139,6 +140,7 @@ async function searchTasks(req, res, next) {
              JOIN users u ON t.user_id = u.id
       WHERE t.title ILIKE ${searchPattern}
          OR u.name ILIKE ${searchPattern}
+         AND t.trash = FALSE
       ORDER BY CASE
                  WHEN t.title ILIKE ${exactMatch} THEN 1
                  WHEN t.title ILIKE ${startsWith} THEN 2
